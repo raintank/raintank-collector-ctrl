@@ -1,7 +1,7 @@
 'use strict';
 
 var config = require('./config').config;
-var schema = require('raintank-core/schema');
+var raintankClient = require('./raintank-api-client');
 var util = require('util');
 var queue = require('raintank-queue');
 var consumer = new queue.Consumer({
@@ -25,6 +25,29 @@ producer.init({
 function handler (req, res) {
   res.writeHead(404);
   res.end();
+}
+
+function refresh(sockets) {
+    if (! util.isArray(sockets)) {
+        sockets = [sockets];
+    }
+    /*TODO:(awoods)
+    We need to rewrite this to handle multiple sockets for each location.
+    When > 1 socket for a location, each socket should get a portion of the
+    monitors to run.  ie, if there are 3 sockets, each socket gets a third.
+    */
+    sockets.forEach(function(socket) {
+        var filter = {
+            location_id: socket.request.location.id,
+        }
+        socket.request.apiClient.get('monitors', filter, function(err, res) {
+            if (err) {
+                console.log("failed to get list of monitors for location %s", socket.request.location.slug);
+                return console.log(err);
+            }
+            socket.emit('refresh', res.data);
+        }); 
+    });
 }
 
 if (cluster.isMaster) {
@@ -72,23 +95,28 @@ if (cluster.isMaster) {
 
     io.use(function(socket, next) {
         var req  = url.parse(socket.request.url, true);
-        //TODO: handle real user authentication so clients can deploy their own
-        // collector nodes.
-        if ('token' in req.query && req.query.token == config.adminToken) {
-            socket.request.user = '531307ac1133a83d285b05a2';
-            socket.request.account = '531307ac1133a83d285b05a1';
-            socket.request.locationCode = req.query.location;
-            next();
-        } else {
+        var apiClient = new raintankClient({
+            host: 'localhost',
+            port: 3000,
+            base: '/api/',
+        });
+        if (!('token' in req.query)) {
             console.log('connection attempt not authenticated.');
             next(new Error('Authentication error'));
         }
+        apiClient.setToken(req.query.token);      
+        apiClient.get('account', function(err, res) {
+            if (err) {
+                return next(err);
+            }
+            socket.request.account = res.data;
+            socket.request.apiClient = apiClient;
+            next();
+        });
     });
 
     io.on('connection', function(socket) {
         console.log('new connection for user: %s@%s', socket.request.user, socket.request.locationCode);
-        socket.join(socket.request.locationCode);
-
         socket.on('serviceEvent', function(data) {
             zlib.inflate(data, function(err, buffer) {
                 if (err) {
@@ -123,55 +151,36 @@ if (cluster.isMaster) {
         });
         socket.on('register', function(data) {
             console.log("register called.");
-            schema.locations.model.findOne({_id: data.id}).exec(function(err, location) {
+            socket.request.apiClient.get('locations', data, function(err, res) {
                 if (err) {
-                    console.log("error looking up location");
-                    console.log(err);
-                    return;
+                    console.log("failed to get locations list.");
+                    return socket.disconnect();
                 }
-                console.log(location);
-                if (!location) {
-                    console.log('location not in DB.');
-                    data._id = data.id;
-                    data.account = socket.request.account;
-                    location = new schema.locations.model(data);
-                    location.save(function(err) {
+                if (res.data.length > 1) {
+                    console.log("multiple locations returned.")
+                    return socket.disconnect();
+                } else if (res.data.length == 0) {
+                    console.log("Location does not yet exist.  Creating it.");
+                    socket.request.apiClient.put('locations', data, function(err, res) {
                         if (err) {
-                            console.log("error saving location.");
+                            console.log("failed to add new location");
                             console.log(err);
+                            return socket.disconnect();
                         }
-                        console.log("saved location to DB.");
+                        console.log(res.data);
+                        socket.request.location = res.data;
+                        refresh(socket);
                     });
+                } else if (res.data.length == 1) {
+                    socket.request.location = res.data[0];
+                    refresh(socket);
                 }
-                var filter = {
-                    deletedAt: {$exists: false},
-                    locations: location._id,
-                }
-                schema.services.model.find(filter).lean().exec(function(err, services){
-                    socket.emit('refresh', JSON.stringify(services));
-                });
             });
         });
     });
 
     setInterval(function() {
-        schema.locations.model.find().lean().select('_id').exec(function(err, locations) {
-            if (err) {
-                console.log("ERROR getting location list.");
-                console.log(err);
-                return;
-            }
-            locations.forEach(function(loc) {
-                var filter = {
-                    deletedAt: {$exists: false},
-                    locations: loc._id,
-                }
-                schema.services.model.find(filter).lean().exec(function(err, services){
-                    console.log("refreshing serviceList for %s", loc._id);
-                    io.to(loc._id).emit('refresh', JSON.stringify(services));
-                });
-            });
-        });
+       refresh(io.sockets.sockets);
     }, 300000);
 
     var running = false;
