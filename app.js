@@ -45,7 +45,11 @@ function refresh(sockets) {
                 console.log("failed to get list of monitors for location %s", socket.request.location.slug);
                 return console.log(err);
             }
-            socket.emit('refresh', res.data);
+            var payload = {
+                location: socket.request.location,
+                services: res.data
+            }
+            socket.emit('refresh', payload);
         }); 
     });
 }
@@ -105,11 +109,10 @@ if (cluster.isMaster) {
             next(new Error('Authentication error'));
         }
         apiClient.setToken(req.query.token);      
-        apiClient.get('account', function(err, res) {
+        apiClient.get('users/accounts', function(err, res) {
             if (err) {
                 return next(err);
             }
-            socket.request.account = res.data;
             socket.request.apiClient = apiClient;
             next();
         });
