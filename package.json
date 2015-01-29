@@ -3,7 +3,6 @@
   "version": "0.0.1",
   "private": true,
   "dependencies": {
-    "raintank-core": "git+https://github.com/raintank/raintank-core.git",
     "raintank-queue": "git+https://github.com/raintank/raintank-queue.git",
     "async": "*",
     "cluster": "*",
