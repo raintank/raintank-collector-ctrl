@@ -5,25 +5,13 @@ var config = {};
 *    Raintank Configuration File.
 *
 *--------------------------------------------------------*/
-config.adminToken = 'jk832sjksf9asdkvnngddfg8sfk';
-
-config.siteUrl = "http://proxy/";
-
-config.graphite_api = {
-  host: 'graphite-api',
-  port: 8888
-}
-
-config.carbon = {
-  host: 'influxdb',
-  port: 2003
-}
 
 config.numCPUs = 1;
 
-config.elasticSearch = {
-  host: 'elasticsearch:9200',
-  log: 'info'
+config.api = {
+  host: "localhost",
+  port: 3000,
+  path: "/api/"
 };
 
 config.queue = {

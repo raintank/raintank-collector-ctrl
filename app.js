@@ -35,8 +35,8 @@ if (cluster.isMaster) {
     var BUFFER = {};
     var publisher = new queue.Publisher({
         url: config.queue.url,
-        exchangeName: "metrics",
-        exchangeType: "fanout",
+        exchangeName: "metricResults",
+        exchangeType: "x-consistent-hash",
         retryCount: 5,
         retryDelay: 1000,
     });
@@ -68,9 +68,9 @@ if (cluster.isMaster) {
     io.use(function(socket, next) {
         var req  = url.parse(socket.request.url, true);
         var apiClient = new raintankClient({
-            host: 'localhost',
-            port: 3000,
-            base: '/api/',
+            host: config.api.host,
+            port: config.api.port,
+            base: config.api.path,
         });
         if (!('token' in req.query)) {
             console.log('connection attempt not authenticated.');
