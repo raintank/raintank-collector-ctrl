@@ -96,7 +96,7 @@ if (cluster.isMaster) {
                     return;
                 }
                 var payload = buffer.toString();
-                producer.send('serviceEvents', [payload]);
+                //producer.send('serviceEvents', [payload]);
             });
         });
 
