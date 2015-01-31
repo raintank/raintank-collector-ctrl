@@ -46,7 +46,6 @@ Client.prototype.request = function(method, path, data, callback) {
 		data = null;
 	}
 	var opts = this.buildRequestOptions(method, path);
-	console.log(opts);
 	var request = http.request(opts, function(res) {
 		var err = null;
 		if (res.statusCode > 299) {

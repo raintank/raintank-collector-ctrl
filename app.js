@@ -77,17 +77,19 @@ if (cluster.isMaster) {
             next(new Error('Authentication error'));
         }
         apiClient.setToken(req.query.token);      
-        apiClient.get('users/accounts', function(err, res) {
+        apiClient.get('account', function(err, res) {
             if (err) {
+                console.log("Authentication failed.", err)
                 return next(err);
             }
             socket.request.apiClient = apiClient;
+            socket.request.account = res.data;
             next();
         });
     });
 
     io.on('connection', function(socket) {
-        console.log('new connection for user: %s@%s', socket.request.user, socket.request.locationCode);
+        console.log('new connection for account: %s', socket.request.account.name);
         socket.on('serviceEvent', function(data) {
             zlib.inflate(data, function(err, buffer) {
                 if (err) {
@@ -121,7 +123,7 @@ if (cluster.isMaster) {
             });
         });
         socket.on('register', function(data) {
-            console.log("register called.");
+            console.log("account %s registering location %s.", socket.request.account.name, data.name);
             socket.request.apiClient.get('locations', data, function(err, res) {
                 if (err) {
                     console.log("failed to get locations list.");
@@ -148,6 +150,7 @@ if (cluster.isMaster) {
                 }
             });
         });
+        socket.on("disconnect", function())
     });
 
     setInterval(function() {
@@ -191,6 +194,9 @@ function refresh(sockets) {
     monitors to run.  ie, if there are 3 sockets, each socket gets a third.
     */
     sockets.forEach(function(socket) {
+        if (!('location' in socket.request)) {
+            return;
+        }
         var filter = {
             location_id: socket.request.location.id,
         }
@@ -215,6 +221,9 @@ function processAction(action, monitor, location, sockets) {
     monitors to run.  ie, if there are 3 sockets, each socket gets a third.
     */
     sockets.forEach(function(socket) {
+        if (!('location' in socket.request)) {
+            return;
+        }
         if (socket.request.location.id == location ) {
             socket.emit(action, JSON.stringify(monitor));
         }         
