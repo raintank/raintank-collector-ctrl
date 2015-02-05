@@ -9,13 +9,18 @@ var config = {};
 config.numCPUs = 1;
 
 config.api = {
-  host: "localhost",
+  host: "grafana-pro",
   port: 3000,
   path: "/api/"
 };
 
 config.queue = {
-  url: 'amqp://192.168.1.131',
+  url: 'amqp://rabbitmq',
+};
+
+config.redis = {
+  host: 'redis',
+  port: 6379
 };
 
 /*-------------------------------------------------------*/

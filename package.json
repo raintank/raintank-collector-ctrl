@@ -10,6 +10,8 @@
     "lodash": "*",
     "string-hash": "*",
     "socket.io": "*",
-    "amqplib": "*"
+    "amqplib": "*",
+    "node-uuid": "*",
+    "redis": "*"
   }
 }
