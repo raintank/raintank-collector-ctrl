@@ -506,7 +506,7 @@ function _refreshLocation(locationId, callback) {
         console.log(nodeSockets);
         var numSockets = nodeSockets.length;
 
-        var count = 0;
+        var count = -1;
         async.each(nodeSockets, function(nodeSocket, next) {
             count++;
             var node = nodeSocket.split(".")[0];
