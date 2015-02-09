@@ -554,6 +554,9 @@ function processAction(action, monitor, locationId) {
             return;
         }
         console.log(nodeSockets);
+	if (nodeSockets.length < 1) {
+		return;
+	}
         var numSockets = nodeSockets.length;
 	var nodePos = monitor.id % numSockets
  	var nodeSocket = nodeSockets[nodePos];
