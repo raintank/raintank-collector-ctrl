@@ -406,10 +406,12 @@ function processHeartbeat(message) {
 function processGrafanaEvent(message) {
     console.log(message);
     var routingKey = message.fields.routingKey;
-    var action = routingKey.split('.')[1];
-    var monitor = JSON.parse(message.content.toString());
+    var action = routingKey.split('.')[2];
+    var monitor = JSON.parse(message.content.toString()).payload;
+    console.log(monitor);
     monitor.locations.forEach(function(loc) {
         //send event to the location responsible for this monitor.
+	console.log("sending event to location %s", loc);
         processAction(action, monitor, loc);
     });
 }
@@ -545,18 +547,28 @@ function _refreshLocation(locationId, callback) {
     });
 }
 
-function processAction(action, monitor, location, sockets) {
-    /*TODO:(awoods)
-    We need to rewrite this to handle multiple sockets for each location.
-    When > 1 socket for a location, each socket should get a portion of the
-    monitors to run.  ie, if there are 3 sockets, each socket gets a third.
-    */
-    sockets.forEach(function(socket) {
-        if (!('location' in socket.request)) {
+function processAction(action, monitor, locationId) {
+     getNodeSockets(locationId, function(err, nodeSockets) {
+        if (err) {
+            console.log("failed to get list of nodeSockets.", err);
             return;
         }
-        if (socket.request.location.id == location ) {
-            socket.emit(action, JSON.stringify(monitor));
-        }         
+        console.log(nodeSockets);
+        var numSockets = nodeSockets.length;
+	var nodePos = monitor.id % numSockets
+ 	var nodeSocket = nodeSockets[nodePos];
+	var node = nodeSocket.split(".")[0];
+        if (node != HOSTID) {
+            return;
+        }
+	var socketId = nodeSocket.split(".")[1];
+
+    	io.sockets.sockets.forEach(function(socket) {
+		if ( socket.id != socketId) {
+            		return;
+		}
+ 		console.log("sending %s to %s", action, socket.id);
+		socket.emit(action,JSON.stringify(monitor));
+        });
     });
 }

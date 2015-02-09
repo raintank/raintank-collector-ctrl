@@ -9,7 +9,7 @@ var config = {};
 config.numCPUs = 1;
 
 config.api = {
-  host: "grafana-pro",
+  host: "grafana",
   port: 3000,
   path: "/api/"
 };
