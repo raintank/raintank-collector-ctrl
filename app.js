@@ -28,6 +28,7 @@ function handler (req, res) {
 }
 
 var metricPublisher;
+var eventPublisher;
 var collectorCtrlPublisher;
 var io;
 var ready = false;
@@ -93,6 +94,14 @@ if (cluster.isMaster) {
         retryCount: 5,
         retryDelay: 1000,
     });
+    eventPublisher = new queue.Publisher({
+        url: config.queue.url,
+        exchangeName: "grafana_events",
+        exchangeType: "topic",
+        retryCount: 5,
+        retryDelay: 1000,
+    });
+
     collectorCtrlPublisher = new queue.Publisher({
         url: config.queue.url,
         exchangeName: "collectorCtrlEvents",
@@ -164,7 +173,7 @@ if (cluster.isMaster) {
 
     io.on('connection', function(socket) {
         console.log('new connection for account: %s', socket.request.account.name);
-        socket.on('serviceEvent', function(data) {
+        socket.on('event', function(data) {
             zlib.inflate(data, function(err, buffer) {
                 if (err) {
                     console.log("failed to decompress payload.");
@@ -172,29 +181,57 @@ if (cluster.isMaster) {
                     return;
                 }
                 var payload = buffer.toString();
-                //producer.send('serviceEvents', [payload]);
+                var e = JSON.parse(payload);
+                if (!(socket.request.location.public)) {      
+                    e.account_id = socket.request.account.id;
+                    payload = JSON.stringify(e);
+                }
+                var routing_key = util.format("EVENT.%s.%s", e.severity, e.event_type);
+                eventPublisher.publish(JSON.stringify(e), routing_key, function(err) {
+                    if (err) {
+                        console.log("Failed to send event to queue.", err);
+                    } else {
+                        console.log("Event sent to queue.");
+                    }
+                });
             });
         });
 
         socket.on('results', function(data) {
-            zlib.inflate(data, function(err, buffer) {
-                if (err) {
-                    console.log("failed to decompress payload.");
-                    console.log(err);
+            var process = function(data) {
+                //if we recieve a result before the collector
+                // has registered, then wait a second before processing.
+                if (!("location" in socket.request)) {
+                    setTimeout(function() {
+                        process(data);
+                    }, 1000);
                     return;
                 }
-                var payload = JSON.parse(buffer.toString());
-                var count =0;
-                payload.forEach(function(metric) {
-                    count++;
-                    var partition = hashCode(metric.name) % 1024;
-                    if (!(partition in BUFFER)) {
-                        BUFFER[partition] = [];
+                zlib.inflate(data, function(err, buffer) {
+                    if (err) {
+                        console.log("failed to decompress payload.");
+                        console.log(err);
+                        return;
                     }
-                    BUFFER[partition].push(metric);
+                    var payload = JSON.parse(buffer.toString());
+                    var count =0;
+                    payload.forEach(function(metric) {
+                        count++;
+                        // dont allow non-public collectors to send
+                        // metrics for any account.
+                        if (!(socket.request.location.public)) {
+                            metric.account = socket.request.account.id;
+                        }
+                        var partition = hashCode(metric.name) % 1024;
+                        if (!(partition in BUFFER)) {
+                            BUFFER[partition] = [];
+                        }
+                        BUFFER[partition].push(metric);
+                    });
+                    RECV = RECV + count;
                 });
-                RECV = RECV + count;
-            });
+            }
+            process(data);            
         });
         socket.on('register', function(data) {
             console.log("account %s registering location %s.", socket.request.account.name, data.name);
@@ -487,7 +524,6 @@ function refreshLocation(locationId) {
     refreshLock[locationId] = true;
     setTimeout(function() {
         _refreshLocation(locationId, function(err) {
-            console.log("refresh complete.", err);
             refreshLock[locationId] = false;
         });
     }, 1000);
