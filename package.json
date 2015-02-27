@@ -8,7 +8,7 @@
     "cluster": "*",
     "request": "*",
     "lodash": "*",
-    "string-hash": "*",
+    "crc-32": "*",
     "socket.io": "*",
     "amqplib": "*",
     "node-uuid": "*",

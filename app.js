@@ -4,7 +4,7 @@ var config = require('./config').config;
 var raintankClient = require('./raintank-api-client');
 var util = require('util');
 var queue = require('raintank-queue');
-var hashCode = require('string-hash');
+var hashCode = require('crc-32').str;
 var async = require('async');
 var numCPUs = config.numCPUs;
 var http = require('http');
@@ -160,19 +160,19 @@ if (cluster.isMaster) {
             next(new Error('Authentication error'));
         }
         apiClient.setToken(req.query.token);      
-        apiClient.get('account', function(err, res) {
+        apiClient.get('org', function(err, res) {
             if (err) {
                 console.log("Authentication failed.", err)
                 return next(err);
             }
             socket.request.apiClient = apiClient;
-            socket.request.account = res.data;
+            socket.request.org = res.data;
             next();
         });
     });
 
     io.on('connection', function(socket) {
-        console.log('new connection for account: %s', socket.request.account.name);
+        console.log('new connection for org: %s', socket.request.org.name);
         socket.on('event', function(data) {
             zlib.inflate(data, function(err, buffer) {
                 if (err) {
@@ -183,7 +183,7 @@ if (cluster.isMaster) {
                 var payload = buffer.toString();
                 var e = JSON.parse(payload);
                 if (!(socket.request.location.public)) {      
-                    e.account_id = socket.request.account.id;
+                    e.org_id = socket.request.org.id;
                     payload = JSON.stringify(e);
                 }
                 var routing_key = util.format("EVENT.%s.%s", e.severity, e.event_type);
@@ -218,9 +218,9 @@ if (cluster.isMaster) {
                     payload.forEach(function(metric) {
                         count++;
                         // dont allow non-public collectors to send
-                        // metrics for any account.
+                        // metrics for any org.
                         if (!(socket.request.location.public)) {
-                            metric.account = socket.request.account.id;
+                            metric.org_id = socket.request.org.id;
                         }
                         var partition = hashCode(metric.name) % 1024;
                         if (!(partition in BUFFER)) {
@@ -231,10 +231,10 @@ if (cluster.isMaster) {
                     RECV = RECV + count;
                 });
             }
-            process(data);            
+            process(data);
         });
         socket.on('register', function(data) {
-            console.log("account %s registering location %s.", socket.request.account.name, data.name);
+            console.log("org %s registering location %s.", socket.request.org.name, data.name);
             socket.request.apiClient.get('locations', data, function(err, res) {
                 if (err) {
                     console.log("failed to get locations list.");
