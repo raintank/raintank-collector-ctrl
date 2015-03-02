@@ -173,28 +173,38 @@ if (cluster.isMaster) {
 
     io.on('connection', function(socket) {
         console.log('new connection for org: %s', socket.request.org.name);
-        socket.on('event', function(data) {
-            zlib.inflate(data, function(err, buffer) {
-                if (err) {
-                    console.log("failed to decompress payload.");
-                    console.log(err);
-                    return;
-                }
-                var payload = buffer.toString();
-                var e = JSON.parse(payload);
-                if (!(socket.request.location.public)) {      
-                    e.org_id = socket.request.org.id;
-                    payload = JSON.stringify(e);
-                }
-                var routing_key = util.format("EVENT.%s.%s", e.severity, e.event_type);
-                eventPublisher.publish(JSON.stringify(e), routing_key, function(err) {
+        socket.on('event', function(rawData) {
+            function processEvent(data) {
+                zlib.inflate(data, function(err, buffer) {
                     if (err) {
-                        console.log("Failed to send event to queue.", err);
-                    } else {
-                        console.log("Event sent to queue.");
+                        console.log("failed to decompress payload.");
+                        console.log(err);
+                        return;
                     }
+                    var payload = buffer.toString();
+                    var e = JSON.parse(payload);
+                    if (!(socket.request.location.public)) {      
+                        e.org_id = socket.request.org.id;
+                        payload = JSON.stringify(e);
+                    }
+                    var routing_key = util.format("EVENT.%s.%s", e.severity, e.event_type);
+                    eventPublisher.publish(JSON.stringify(e), routing_key, function(err) {
+                        if (err) {
+                            console.log("Failed to send event to queue.", err);
+                        } else {
+                            console.log("Event sent to queue.");
+                        }
+                    });
                 });
-            });
+            }
+
+            if ('location' in socket.request) {
+                processEvent(rawData);
+            } else {
+                setTimeout(function() {
+                    processEvent(rawData);
+                }, 2000)
+            }
         });
 
         socket.on('results', function(data) {
