@@ -1,29 +1,9 @@
 'use strict';
-var config = {};
 
-/*-------------------------------------------------------
-*    Raintank Configuration File.
-*
-*--------------------------------------------------------*/
+//Load the config file.
+var config = require('./config/config.json');
 
-config.numCPUs = 1;
-
-config.api = {
-  host: "grafana",
-  port: 3000,
-  path: "/api/"
-};
-
-config.queue = {
-  url: 'amqp://rabbitmq',
-};
-
-config.redis = {
-  host: 'redis',
-  port: 6379
-};
-
-/*-------------------------------------------------------*/
+/*--------------------Environment variables -----------------------------*/
 function parseEnv(name, value, cnf) {
   if (name in cnf) {
     cnf[name] = value;
@@ -52,4 +32,5 @@ for (var key in process.env) {
     parseEnv(name, process.env[key], config);
   }
 }
+
 exports.config = config;
