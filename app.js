@@ -42,16 +42,16 @@ if (cluster.isMaster) {
     console.log('worker ' + worker.process.pid + ' died');
   });
   getNodesAlive(function(err, nodes) {
-        //get list of locations from redis
-        getActiveLocations(function(err, activeLocations) {
+        //get list of collectors from redis
+        getActiveCollectors(function(err, activeCollectors) {
             if (err) {
-                console.log("failed to get list of activeLocations.", err);
+                console.log("failed to get list of activeCollectors.", err);
                 return;
             }
-            activeLocations.forEach(function(locationId) {
-                getNodeSockets(locationId, function(err, nodeSockets) {
+            activeCollectors.forEach(function(collectorId) {
+                getNodeSockets(collectorId, function(err, nodeSockets) {
                     if (err) {
-                        console.log("failed to get list of nodes at location: ", locationId, err);
+                        console.log("failed to get list of nodes at collector: ", collectorId, err);
                         return;
                     }
                     var socketsToRemove = [];
@@ -62,12 +62,12 @@ if (cluster.isMaster) {
                         }
                     });
                     if (socketsToRemove.length > 0) {
-                        delNodeSocket(locationId, socketsToRemove, function(err) {
+                        delNodeSocket(collectorId, socketsToRemove, function(err) {
                             if (err) {
                                 console.log("failed to remove stale nodeSockets.", err);
                                 return;
                             }
-                            refreshLocation(locationId);
+                            refreshCollector(collectorId);
                         });
                     }
                 });
@@ -183,7 +183,7 @@ if (cluster.isMaster) {
                     }
                     var payload = buffer.toString();
                     var e = JSON.parse(payload);
-                    if (!(socket.request.location.public)) {      
+                    if (!(socket.request.collector.public)) {      
                         e.org_id = socket.request.org.id;
                         payload = JSON.stringify(e);
                     }
@@ -198,7 +198,7 @@ if (cluster.isMaster) {
                 });
             }
 
-            if ('location' in socket.request) {
+            if ('collector' in socket.request) {
                 processEvent(rawData);
             } else {
                 setTimeout(function() {
@@ -211,7 +211,7 @@ if (cluster.isMaster) {
             var process = function(data) {
                 //if we recieve a result before the collector
                 // has registered, then wait a second before processing.
-                if (!("location" in socket.request)) {
+                if (!("collector" in socket.request)) {
                     setTimeout(function() {
                         process(data);
                     }, 1000);
@@ -229,7 +229,7 @@ if (cluster.isMaster) {
                         count++;
                         // dont allow non-public collectors to send
                         // metrics for any org.
-                        if (!(socket.request.location.public)) {
+                        if (!(socket.request.collector.public)) {
                             metric.org_id = socket.request.org.id;
                         }
                         var partition = hashCode(metric.name) % 1024;
@@ -244,39 +244,39 @@ if (cluster.isMaster) {
             process(data);
         });
         socket.on('register', function(data) {
-            console.log("org %s registering location %s.", socket.request.org.name, data.name);
-            socket.request.apiClient.get('locations', data, function(err, res) {
+            console.log("org %s registering collector %s.", socket.request.org.name, data.name);
+            socket.request.apiClient.get('collectors', data, function(err, res) {
                 if (err) {
-                    console.log("failed to get locations list.");
+                    console.log("failed to get collectors list.");
                     return socket.disconnect();
                 }
                 if (res.data.length > 1) {
-                    console.log("multiple locations returned.")
+                    console.log("multiple collectors returned.")
                     return socket.disconnect();
                 } else if (res.data.length == 0) {
-                    console.log("Location does not yet exist.  Creating it.");
-                    socket.request.apiClient.put('locations', data, function(err, res) {
+                    console.log("collector does not yet exist.  Creating it.");
+                    socket.request.apiClient.put('collectors', data, function(err, res) {
                         if (err) {
-                            console.log("failed to add new location");
+                            console.log("failed to add new collector");
                             console.log(err);
                             return socket.disconnect();
                         }
                         console.log(res.data);
-                        socket.request.location = res.data;
+                        socket.request.collector = res.data;
                         register(socket);
                     });
                 } else if (res.data.length == 1) {
-                    socket.request.location = res.data[0];
+                    socket.request.collector = res.data[0];
                     register(socket);
                 }
             });
         });
         socket.on("disconnect", function(reason) {
-            if ('location' in socket.request) {
-                console.log("collector at location %s disconnected. %s", socket.request.location.name, reason);
+            if ('collector' in socket.request) {
+                console.log("collector at collector %s disconnected. %s", socket.request.collector.name, reason);
                 unregister(socket);
             } else {
-                console.log("collector disconnected before registering location.", reason);
+                console.log("collector disconnected before registering collector.", reason);
             }
         });
     });
@@ -314,29 +314,29 @@ if (cluster.isMaster) {
     });
 }
 
-function getActiveLocations(callback) {
-    redisClient.smembers("activeLocations", callback);
+function getActivecollectors(callback) {
+    redisClient.smembers("activecollectors", callback);
 }
 
-function setActiveLocation(locationId, callback) {
-    redisClient.sadd("activeLocations", locationId, callback);
+function setActivecollector(collectorId, callback) {
+    redisClient.sadd("activecollectors", collectorId, callback);
 }
 
-function getNodeSockets(locationId, callback) {
-    var key = util.format("collectorCtrl.%s", locationId);
+function getNodeSockets(collectorId, callback) {
+    var key = util.format("collectorCtrl.%s", collectorId);
     console.log("sending query for nodeSockets");
     redisClient.smembers(key, callback);
 }
 
-function addNodeSocket(locationId, socketId, callback) {
-    var key = util.format("collectorCtrl.%s", locationId);
+function addNodeSocket(collectorId, socketId, callback) {
+    var key = util.format("collectorCtrl.%s", collectorId);
     var value = util.format("%s.%s", HOSTID, socketId);
     console.log("adding nodeSocket %s to %s", value, key);
     redisClient.sadd(key, value, callback);
 }
 
-function delNodeSocket(locationId, socketIds, callback) {
-    var key = util.format("collectorCtrl.%s", locationId);
+function delNodeSocket(collectorId, socketIds, callback) {
+    var key = util.format("collectorCtrl.%s", collectorId);
     redisClient.srem(key, socketIds, callback);
 }
 
@@ -358,7 +358,7 @@ function processCollectorCtrlEvents(message) {
     } else if (payload.type == "nodeGone") {
         processNodeGone(payload);
     } else if (payload.type == "refresh") {
-        refreshLocation(payload.locationId);
+        refreshcollector(payload.collectorId);
     }
 }
 
@@ -374,16 +374,16 @@ function processNodeGone(message) {
             console.log("failed to remove node from NodeAlive list.",err);
         }
     });
-    //get list of locations from redis
-    getActiveLocations(function(err, activeLocations) {
+    //get list of collectors from redis
+    getActivecollectors(function(err, activecollectors) {
         if (err) {
-            console.log("failed to get list of activeLocations.", err);
+            console.log("failed to get list of activecollectors.", err);
             return;
         }
-        activeLocations.forEach(function(locationId) {
-            getNodeSockets(locationId, function(err, nodeSockets) {
+        activecollectors.forEach(function(collectorId) {
+            getNodeSockets(collectorId, function(err, nodeSockets) {
                 if (err) {
-                    console.log("failed to get list of nodes at location: ", locationId, err);
+                    console.log("failed to get list of nodes at collector: ", collectorId, err);
                     return;
                 }
                 var socketsToRemove = [];
@@ -394,12 +394,12 @@ function processNodeGone(message) {
                     }
                 });
                 if (socketsToRemove.length > 0) {
-                    delNodeSocket(locationId, socketsToRemove, function(err) {
+                    delNodeSocket(collectorId, socketsToRemove, function(err) {
                         if (err) {
                             console.log("failed to remove stale nodeSockets.", err);
                             return;
                         }
-                        refreshLocation(locationId);
+                        refreshcollector(collectorId);
                     });
                 }
             });
@@ -456,24 +456,24 @@ function processGrafanaEvent(message) {
     var action = routingKey.split('.')[2];
     var monitor = JSON.parse(message.content.toString()).payload;
     console.log(monitor);
-    monitor.locations.forEach(function(loc) {
-        //send event to the location responsible for this monitor.
-	console.log("sending event to location %s", loc);
-        processAction(action, monitor, loc);
+    monitor.collectors.forEach(function(c) {
+        //send event to the collector responsible for this monitor.
+	console.log("sending event to collector %s", c);
+        processAction(action, monitor, c);
     });
 }
 
 function register(socket) {
-    var locationId = socket.request.location.id;
-    addNodeSocket(locationId, socket.id, function(err) {
+    var collectorId = socket.request.collector.id;
+    addNodeSocket(collectorId, socket.id, function(err) {
         if (err) {
-            console.log("failed to add %s to location %s", socket.id, locationId);
+            console.log("failed to add %s to collector %s", socket.id, collectorId);
             console.log(err);
             return;
         }
         var payload = {
             type: "refresh",
-            locationId: locationId,
+            collectorId: collectorId,
         }
         collectorCtrlPublisher.publish(JSON.stringify(payload), '', function(err) {
             if (err) {
@@ -481,24 +481,24 @@ function register(socket) {
             }
         });
     });
-    setActiveLocation(locationId, function(err) {
+    setActivecollector(collectorId, function(err) {
         if (err) {
-            console.log("failed to add %s to activeLocations. ", locationId, err);
+            console.log("failed to add %s to activecollectors. ", collectorId, err);
         }
     });
 }
 
 function unregister(socket) {
-    var locationId = socket.request.location.id;
-    delNodeSocket(locationId, util.format("%s.%s", HOSTID,  socket.id), function(err) {
+    var collectorId = socket.request.collector.id;
+    delNodeSocket(collectorId, util.format("%s.%s", HOSTID,  socket.id), function(err) {
         if (err) {
-            console.log("failed to remove %s from location %s", socket.id, locationId);
+            console.log("failed to remove %s from collector %s", socket.id, collectorId);
             console.log(err);
             return;
         }
         var payload = {
             type: "refresh",
-            locationId: locationId,
+            collectorId: collectorId,
         }
         collectorCtrlPublisher.publish(JSON.stringify(payload), '', function(err) {
             if (err) {
@@ -512,39 +512,42 @@ function refresh() {
     if (! ready) {
         return;
     }
-    getActiveLocations(function(err, activeLocations) {
+    getActivecollectors(function(err, activecollectors) {
         if (err) {
-            console.log("failed to get list of active locations. ", err);
+            console.log("failed to get list of active collectors. ", err);
             return;
         }
-        activeLocations.forEach(function(locationId) {
-            refreshLocation(locationId);
+        activecollectors.forEach(function(collectorId) {
+            refreshcollector(collectorId);
         });
     });
 }
 
-function refreshLocation(locationId) {
+function refreshcollector(collectorId) {
     if (! ready) {
         return;
     }
-    if (refreshLock[locationId]) {
+    if (refreshLock[collectorId]) {
         console.log("refresh is locked.");
         return;
     }
-    refreshLock[locationId] = true;
+    refreshLock[collectorId] = true;
     setTimeout(function() {
-        _refreshLocation(locationId, function(err) {
-            refreshLock[locationId] = false;
+        refreshLock[collectorId] = false;
+        _refreshcollector(collectorId, function(err) {
+            if (err) {
+                console.log(err);
+            }
         });
     }, 1000);
 }
 
-function _refreshLocation(locationId, callback) {
+function _refreshcollector(collectorId, callback) {
     if (! ready) {
         return;
     }
-    console.log("refreshing location ", locationId);
-    getNodeSockets(locationId, function(err, nodeSockets) {
+    console.log("refreshing collector ", collectorId);
+    getNodeSockets(collectorId, function(err, nodeSockets) {
         if (err) {
             console.log("failed to get list of nodeSockets.", err);
             return;
@@ -565,19 +568,19 @@ function _refreshLocation(locationId, callback) {
                     return cb();
                 }
                 var filter = {
-                    location_id: locationId,
+                    collector_id: collectorId,
                     modulo: numSockets,
                     modulo_offset: count % numSockets,
                 }
                 console.log(filter);
                 socket.request.apiClient.get('monitors', filter, function(err, res) {
                     if (err) {
-                        console.log("failed to get list of monitors for location %s", socket.request.location.slug);
+                        console.log("failed to get list of monitors for collector %s", socket.request.collector.slug);
                         console.log(err);
                         return cb();
                     }
                     var payload = {
-                        location: socket.request.location,
+                        collector: socket.request.collector,
                         services: res.data
                     }
                     console.log("sending %s to socket %s", payload.services.length, socket.id);
@@ -593,8 +596,8 @@ function _refreshLocation(locationId, callback) {
     });
 }
 
-function processAction(action, monitor, locationId) {
-     getNodeSockets(locationId, function(err, nodeSockets) {
+function processAction(action, monitor, collectorId) {
+     getNodeSockets(collectorId, function(err, nodeSockets) {
         if (err) {
             console.log("failed to get list of nodeSockets.", err);
             return;
