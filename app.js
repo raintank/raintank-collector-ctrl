@@ -244,6 +244,9 @@ if (cluster.isMaster) {
             process(data);
         });
         socket.on('register', function(data) {
+            if (!(data && 'name' in data)) {
+                return socket.disconnect();
+            }
             console.log("org %s registering collector %s.", socket.request.org.name, data.name);
             socket.request.apiClient.get('collectors', data, function(err, res) {
                 if (err) {
@@ -273,10 +276,10 @@ if (cluster.isMaster) {
         });
         socket.on("disconnect", function(reason) {
             if ('collector' in socket.request) {
-                console.log("collector at collector %s disconnected. %s", socket.request.collector.name, reason);
+                console.log("collector %s disconnected. %s", socket.request.collector.name, reason);
                 unregister(socket);
             } else {
-                console.log("collector disconnected before registering collector.", reason);
+                console.log("collector disconnected before registering.", reason);
             }
         });
     });
@@ -314,12 +317,12 @@ if (cluster.isMaster) {
     });
 }
 
-function getActivecollectors(callback) {
-    redisClient.smembers("activecollectors", callback);
+function getActiveCollectors(callback) {
+    redisClient.smembers("activeCollectors", callback);
 }
 
-function setActivecollector(collectorId, callback) {
-    redisClient.sadd("activecollectors", collectorId, callback);
+function setActiveCollector(collectorId, callback) {
+    redisClient.sadd("activecCllectors", collectorId, callback);
 }
 
 function getNodeSockets(collectorId, callback) {
@@ -358,7 +361,7 @@ function processCollectorCtrlEvents(message) {
     } else if (payload.type == "nodeGone") {
         processNodeGone(payload);
     } else if (payload.type == "refresh") {
-        refreshcollector(payload.collectorId);
+        refreshCollector(payload.collectorId);
     }
 }
 
@@ -375,12 +378,12 @@ function processNodeGone(message) {
         }
     });
     //get list of collectors from redis
-    getActivecollectors(function(err, activecollectors) {
+    getActiveCollectors(function(err, activeCollectors) {
         if (err) {
-            console.log("failed to get list of activecollectors.", err);
+            console.log("failed to get list of activeCollectors.", err);
             return;
         }
-        activecollectors.forEach(function(collectorId) {
+        activeCollectors.forEach(function(collectorId) {
             getNodeSockets(collectorId, function(err, nodeSockets) {
                 if (err) {
                     console.log("failed to get list of nodes at collector: ", collectorId, err);
@@ -399,7 +402,7 @@ function processNodeGone(message) {
                             console.log("failed to remove stale nodeSockets.", err);
                             return;
                         }
-                        refreshcollector(collectorId);
+                        refreshCollector(collectorId);
                     });
                 }
             });
@@ -481,9 +484,9 @@ function register(socket) {
             }
         });
     });
-    setActivecollector(collectorId, function(err) {
+    setActiveCollector(collectorId, function(err) {
         if (err) {
-            console.log("failed to add %s to activecollectors. ", collectorId, err);
+            console.log("failed to add %s to activeCollectors. ", collectorId, err);
         }
     });
 }
@@ -512,18 +515,18 @@ function refresh() {
     if (! ready) {
         return;
     }
-    getActivecollectors(function(err, activecollectors) {
+    getActiveCollectors(function(err, activeCollectors) {
         if (err) {
             console.log("failed to get list of active collectors. ", err);
             return;
         }
-        activecollectors.forEach(function(collectorId) {
-            refreshcollector(collectorId);
+        activeCollectors.forEach(function(collectorId) {
+            refreshCollector(collectorId);
         });
     });
 }
 
-function refreshcollector(collectorId) {
+function refreshCollector(collectorId) {
     if (! ready) {
         return;
     }
@@ -534,7 +537,7 @@ function refreshcollector(collectorId) {
     refreshLock[collectorId] = true;
     setTimeout(function() {
         refreshLock[collectorId] = false;
-        _refreshcollector(collectorId, function(err) {
+        _refreshCollector(collectorId, function(err) {
             if (err) {
                 console.log(err);
             }
@@ -542,7 +545,7 @@ function refreshcollector(collectorId) {
     }, 1000);
 }
 
-function _refreshcollector(collectorId, callback) {
+function _refreshCollector(collectorId, callback) {
     if (! ready) {
         return;
     }
