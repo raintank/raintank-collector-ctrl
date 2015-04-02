@@ -34,47 +34,49 @@ var io;
 var ready = false;
 
 if (cluster.isMaster) {
-  // Fork workers.
-  for (var i = 0; i < numCPUs; i++) {
-    cluster.fork();
-  }
-  cluster.on('exit', function(worker, code, signal) {
-    console.log('worker ' + worker.process.pid + ' died');
-  });
-  getNodesAlive(function(err, nodes) {
+    // Fork workers.
+    for (var i = 0; i < numCPUs; i++) {
+        cluster.fork();
+    }
+    cluster.on('exit', function(worker, code, signal) {
+        console.log('worker ' + worker.process.pid + ' died');
+    });
+    setInterval(function() {
         //get list of collectors from redis
         getActiveCollectors(function(err, activeCollectors) {
             if (err) {
                 console.log("failed to get list of activeCollectors.", err);
                 return;
             }
-            activeCollectors.forEach(function(collectorId) {
-                getNodeSockets(collectorId, function(err, nodeSockets) {
-                    if (err) {
-                        console.log("failed to get list of nodes at collector: ", collectorId, err);
-                        return;
-                    }
-                    var socketsToRemove = [];
-                    nodeSockets.forEach(function(nodeSocket) {
-                        var hostId = nodeSocket.split(".")[0];
-                        if (!(hostId in nodes)) {
-                            socketsToRemove.push(nodeSocket);
+            getNodesAlive(function(err, nodes) {
+                activeCollectors.forEach(function(collectorId) {
+
+                    getNodeSockets(collectorId, function(err, nodeSockets) {
+                        if (err) {
+                            console.log("failed to get list of nodes at collector: ", collectorId, err);
+                            return;
+                        }
+                        var socketsToRemove = [];
+                        nodeSockets.forEach(function(nodeSocket) {
+                            var hostId = nodeSocket.split(".")[0];
+                            if (!(hostId in nodes)) {
+                                socketsToRemove.push(nodeSocket);
+                            }
+                        });
+                        if (socketsToRemove.length > 0) {
+                            delNodeSocket(collectorId, socketsToRemove, function(err) {
+                                if (err) {
+                                    console.log("failed to remove stale nodeSockets.", err);
+                                    return;
+                                }
+                                refreshCollector(collectorId);
+                            });
                         }
                     });
-                    if (socketsToRemove.length > 0) {
-                        delNodeSocket(collectorId, socketsToRemove, function(err) {
-                            if (err) {
-                                console.log("failed to remove stale nodeSockets.", err);
-                                return;
-                            }
-                            refreshCollector(collectorId);
-                        });
-                    }
                 });
             });
         });
-    });
-
+    }, 3000);
 } else {
     var app = http.createServer(handler)
     io = require('socket.io')(app);
@@ -322,12 +324,12 @@ function getActiveCollectors(callback) {
 }
 
 function setActiveCollector(collectorId, callback) {
-    redisClient.sadd("activecCllectors", collectorId, callback);
+    redisClient.sadd("activeCollectors", collectorId, callback);
 }
 
 function getNodeSockets(collectorId, callback) {
     var key = util.format("collectorCtrl.%s", collectorId);
-    console.log("sending query for nodeSockets");
+    console.log("sending query for nodeSockets for %s", key);
     redisClient.smembers(key, callback);
 }
 
@@ -520,6 +522,7 @@ function refresh() {
             console.log("failed to get list of active collectors. ", err);
             return;
         }
+        console.log("refreshing collectors. there are ", activeCollectors.length);
         activeCollectors.forEach(function(collectorId) {
             refreshCollector(collectorId);
         });
@@ -556,6 +559,7 @@ function _refreshCollector(collectorId, callback) {
             return;
         }
         console.log(nodeSockets);
+
         var numSockets = nodeSockets.length;
 
         var count = -1;
@@ -577,6 +581,7 @@ function _refreshCollector(collectorId, callback) {
                 }
                 console.log(filter);
                 socket.request.apiClient.get('monitors', filter, function(err, res) {
+			console.log(res.data);
                     if (err) {
                         console.log("failed to get list of monitors for collector %s", socket.request.collector.slug);
                         console.log(err);
