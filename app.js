@@ -193,8 +193,6 @@ if (cluster.isMaster) {
                     eventPublisher.publish(JSON.stringify(e), routing_key, function(err) {
                         if (err) {
                             console.log("Failed to send event to queue.", err);
-                        } else {
-                            console.log("Event sent to queue.");
                         }
                     });
                 });
@@ -266,7 +264,6 @@ if (cluster.isMaster) {
                             console.log(err);
                             return socket.disconnect();
                         }
-                        console.log(res.data);
                         socket.request.collector = res.data;
                         register(socket);
                     });
@@ -329,7 +326,6 @@ function setActiveCollector(collectorId, callback) {
 
 function getNodeSockets(collectorId, callback) {
     var key = util.format("collectorCtrl.%s", collectorId);
-    console.log("sending query for nodeSockets for %s", key);
     redisClient.smembers(key, callback);
 }
 
@@ -456,11 +452,9 @@ function processHeartbeat(message) {
 }
 
 function processGrafanaEvent(message) {
-    console.log(message);
     var routingKey = message.fields.routingKey;
     var action = routingKey.split('.')[2];
     var monitor = JSON.parse(message.content.toString()).payload;
-    console.log(monitor);
     monitor.collectors.forEach(function(c) {
         //send event to the collector responsible for this monitor.
 	console.log("sending event to collector %s", c);
@@ -558,7 +552,6 @@ function _refreshCollector(collectorId, callback) {
             console.log("failed to get list of nodeSockets.", err);
             return;
         }
-        console.log(nodeSockets);
 
         var numSockets = nodeSockets.length;
 
@@ -579,9 +572,8 @@ function _refreshCollector(collectorId, callback) {
                     modulo: numSockets,
                     modulo_offset: count % numSockets,
                 }
-                console.log(filter);
+ 
                 socket.request.apiClient.get('monitors', filter, function(err, res) {
-			console.log(res.data);
                     if (err) {
                         console.log("failed to get list of monitors for collector %s", socket.request.collector.slug);
                         console.log(err);
@@ -591,7 +583,7 @@ function _refreshCollector(collectorId, callback) {
                         collector: socket.request.collector,
                         services: res.data
                     }
-                    console.log("sending %s to socket %s", payload.services.length, socket.id);
+                    console.log("sending %s monitors to socket %s", payload.services.length, socket.id);
                     socket.emit('refresh', payload);
                     return cb();
                 });
