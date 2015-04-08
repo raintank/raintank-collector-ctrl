@@ -12,6 +12,7 @@
     "socket.io": "*",
     "amqplib": "*",
     "node-uuid": "*",
-    "redis": "*"
+    "redis": "*",
+    "log4js": "*"
   }
 }
